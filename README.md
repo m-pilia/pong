@@ -1,8 +1,8 @@
 pong game emulator
 ==================
-This is a clone of the pong game, implemented in c with ncurses interface.
+This is a clone of the pong game, a C implementation with ncurses interface.
 
-[Screenshot](https://www.dropbox.com/s/orryja85po2po5c/pong.png)
+![Screenshot](http://i1383.photobucket.com/albums/ah312/m-programmer/pong_zps08d52b70.png)
 
 Technical details
 =================
