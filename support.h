@@ -35,7 +35,7 @@
 #include <stdio.h>
 
 #define TIME_GAP_BALL 25000 /*!< time in us between ball position update */
-#define TIME_GAP_AI 50000 /*!< time in us between ai position update */
+#define TIME_GAP_AI 25000 /*!< time in us between ai position update */
 #define FIELD_TOP 0 /*!< top row for the playing field */
 #define FIELD_BOT getmaxy(stdscr) - 1 /*!< bottom row for the playing field */
 #define AI_COL 1 /*!< column for the ai paddle */
