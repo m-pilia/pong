@@ -67,10 +67,10 @@ int main(int argc, char *argv[])
      * and save them into global variables */
     sett[0] =  
         popen("xset q | grep 'auto repeat delay:' |"
-                " egrep ([0-9])+ | sed -n '1p'", "r");
+                " egrep -o '([0-9])+' | sed -n '1p'", "r");
     sett[1] =
         popen("xset q | grep 'auto repeat delay:' |"
-                " egrep ([0-9])+ | sed -n '2p'", "r");
+                " egrep -o '([0-9])+' | sed -n '2p'", "r");
     fgets(del, 4, sett[0]);
     fgets(rate, 3, sett[1]);
 
