@@ -63,12 +63,14 @@ int main(int argc, char *argv[])
 
     srand(getpid());
 
-    /* read keyboard settings (delay and rate) from system 
-     * and save them into variables */
+    /* read typematic settings (repeat delay and rate) from xorg config
+     * and save them into global variables */
     sett[0] =  
-        popen("xset q | grep 'auto repeat delay:' | cut -d ' ' -f 7", "r");
+        popen("xset q | grep 'auto repeat delay:' |"
+                " egrep ([0-9])+ | sed -n '1p'", "r");
     sett[1] =
-        popen("xset q | grep 'auto repeat delay:' | cut -d ' ' -f 14", "r");
+        popen("xset q | grep 'auto repeat delay:' |"
+                " egrep ([0-9])+ | sed -n '2p'", "r");
     fgets(del, 4, sett[0]);
     fgets(rate, 3, sett[1]);
 

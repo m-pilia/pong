@@ -256,7 +256,7 @@ void draw_ball(game_data *data)
 };
 
 /*!
- * This procedure restores the system keyboard settings as they were 
+ * This procedure restores the xorg typematic settings as they were 
  * before the game start.
  */
 void restore_key_rate()
