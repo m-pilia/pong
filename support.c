@@ -27,14 +27,83 @@
 #include "support.h"
 
 /*!
- * This procedure is an handler for window resize.
  */
-void resize_handler(int i)
+void *signal_listener(void *d)
+{
+    game_data *data = (game_data*) d;
+    struct signalfd_siginfo signal_info;
+
+    /* create poll to wait on signal file descriptor */
+    struct pollfd pfd[1];
+    pfd[0].fd = data->signal_fd;
+    pfd[0].events = POLLERR | POLLHUP | POLLIN;
+
+    while (1)
+    {
+        /* wait for event on signal fd and then read signal from pipe */
+        poll(pfd, 1, 1);
+        read(data->signal_fd, &signal_info, sizeof (struct signalfd_siginfo));
+
+        /* manage signal */
+        switch (signal_info.ssi_signo)
+        {
+            case SIGKILL:
+            case SIGTERM:
+            case SIGINT:
+                /* quit game safely */
+                termination_handler();
+                break;
+
+            case SIGWINCH:
+                /* resize field (critical section) */
+                pthread_mutex_lock(&data->mut);
+                resize_handler(data);
+                pthread_mutex_unlock(&data->mut);
+                break;
+
+            default:
+                break;
+        }
+        
+    }
+};
+
+/*!
+ * This procedure is an handler to manage window resize.
+ */
+void resize_handler(game_data *data)
 {
     struct winsize ws;
+
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws); /* get terminal size */
     wresize(stdscr, ws.ws_row, ws.ws_col); /* resize ncurses window */
-    /* TODO */
+
+    endwin();
+
+    /* update field size */
+    data->bottom_row = getmaxy(stdscr) - 1;
+    data->paddle_col = getmaxx(stdscr) - 1;
+
+    /* ensure objects are inside the new field */
+    if (data->paddle_pos > data->bottom_row - PADDLE_WIDTH / 2)
+        data->paddle_pos = MAX(
+                data->bottom_row - PADDLE_WIDTH / 2,
+                PADDLE_WIDTH / 2); /* avoid the paddle to go above top row */
+    if (data->ai_paddle_pos > data->bottom_row - PADDLE_WIDTH / 2)
+        data->ai_paddle_pos = MAX(
+                data->bottom_row - PADDLE_WIDTH / 2,
+                PADDLE_WIDTH / 2);
+    if (data->ball_y > data->bottom_row)
+        data->ball_y = data->bottom_row;
+    if (data->ball_x > getmaxx(stdscr))
+        data->ball_y = getmaxx(stdscr) / 2;
+
+    /* update screen content */
+    clear();
+    draw_paddle(data, AI_TAG);
+    draw_paddle(data, KBD_TAG);
+    draw_ball(data);
+    refresh();
 };
 
 /*!
@@ -48,7 +117,7 @@ void *keyboard_handler(void *d)
     while (!data->termination_flag)
     {
         int ch;
-        
+
         /* get user input (critical section) */
         pthread_mutex_lock(&data->mut);
         ch = getch(); 
@@ -59,7 +128,7 @@ void *keyboard_handler(void *d)
             case KEY_UP:
                 /* move pad up when possible */
                 data->paddle_pos_old = data->paddle_pos;
-                if (data->paddle_pos > PADDLE_TOP)
+                if (data->paddle_pos > PADDLE_WIDTH / 2)
                     data->paddle_pos--;
                 write(data->pipedes[1], KBD_TAG, TAG_SIZE);
                 break;
@@ -67,7 +136,7 @@ void *keyboard_handler(void *d)
             case KEY_DOWN:
                 /* move pad down when possible */
                 data->paddle_pos_old = data->paddle_pos;
-                if (data->paddle_pos < PADDLE_BOT)
+                if (data->paddle_pos < data->bottom_row - PADDLE_WIDTH / 2)
                     data->paddle_pos++;
                 write(data->pipedes[1], KBD_TAG, TAG_SIZE);
                 break;
@@ -109,7 +178,7 @@ void *ball_handler(void *d)
         data->ball_x += data->ball_dirx;
 
         /* reflect ball on field top and bottom */
-        if (data->ball_y < FIELD_TOP || data->ball_y > FIELD_BOT) 
+        if (data->ball_y < FIELD_TOP || data->ball_y > data->bottom_row) 
         {
             data->ball_diry *= -1;
             data->ball_y += 2 * data->ball_diry;
@@ -142,7 +211,7 @@ void *ball_handler(void *d)
         }
 
         /* reflect ball on AI pad */
-        if (data->ball_x + 1 == data->ai_paddle_col)
+        if (data->ball_x == data->ai_paddle_col)
         {
             if (abs(data->ai_paddle_pos - data->ball_y - -data->ball_diry) 
                     <= PADDLE_WIDTH / 2)
@@ -190,7 +259,8 @@ void *ai_handler(void *d)
 
         data->ai_paddle_pos_old = data->ai_paddle_pos;
 
-        if (new >= PADDLE_TOP && new <= PADDLE_BOT)
+        if (new >= PADDLE_WIDTH / 2 
+                && new <= data->bottom_row - PADDLE_WIDTH / 2)
             data->ai_paddle_pos = new;
 
         write(data->pipedes[1], AI_TAG, TAG_SIZE);
@@ -271,7 +341,7 @@ void restore_key_rate()
  * ensuring the keyboard system settings are restored and the ncurses
  * window is terminated before the program exit.
  */
-void termination_handler(int i)
+void termination_handler()
 {
     restore_key_rate();
     endwin();

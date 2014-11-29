@@ -27,21 +27,20 @@
 
 #include <ncurses.h>
 #include <sys/ioctl.h>
+#include <sys/signalfd.h>
 #include <unistd.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <pthread.h>
 #include <string.h>
 #include <stdio.h>
+#include <poll.h>
 
-#define TIME_GAP_BALL 25000 /*!< time in us between ball position updates */
-#define TIME_GAP_AI 25000 /*!< time in us between ai position updates */
+#define TIME_GAP_BALL 25000 /*!< time in us between ball position update */
+#define TIME_GAP_AI 25000 /*!< time in us between ai position update */
 #define FIELD_TOP 0 /*!< top row for the playing field */
-#define FIELD_BOT getmaxy(stdscr) - 1 /*!< bottom row for the playing field */
 #define AI_COL 1 /*!< column for the ai paddle */
 #define PADDLE_WIDTH 5 /*!< width of the paddles, must be an odd number */
-#define PADDLE_TOP PADDLE_WIDTH / 2 /*!< top pos. reachable by the paddle */
-#define PADDLE_BOT getmaxy(stdscr) - PADDLE_WIDTH / 2 - 1 /*!< bottom pos. */
 #define PADDLE_COLOR 1 /*!< color pair identifier for player paddle */
 #define BALL_COLOR 2 /*!< color pair identifier for ball */
 #define AI_COLOR 3 /*!< color pair identifier for ai paddle */
@@ -53,6 +52,9 @@
 #define TAG_SIZE sizeof "k"  /*!< size of tags */
 #define QUIT_KEY 'q' /*!< key for game termination */
 #define PLAY_KEY ' ' /*!< key for game start */
+
+#define MAX(a,b) ((a) > (b) ? (a) : (b)) /*!< return maximum of 2 values */
+#define MIN(a,b) ((a) < (b) ? (a) : (b)) /*!< return minimum of 2 values */
 
 /* global variables for keyboard delay and rate settings */
 extern char del[4]; /*!< delay time for repetition after key press */
@@ -80,15 +82,23 @@ typedef struct {
     pthread_mutex_t mut; /*!< mutex for ncurses actions */
     int termination_flag; /*!< request child threads termination */
     int winner; /*!< 0 for player, 1 for ai */
+    int signal_fd; /*!< file descriptor for signal info pipe */
+    int bottom_row; /*!< last row of the gaming field = getmaxy(stdscr) */
 } game_data;
 
+/*!
+ * \brief Thread function for the signal listener thread.
+ *
+ * @param d shared game_data structure
+ */
+void *signal_listener(void*);
 
 /*!
  * \brief Manage window resize.
  *
- * @param i dummy int parameter
+ * @param data shared game_data structure
  */
-void resize_handler(int);
+void resize_handler(game_data *data);
 
 /*!
  * \brief Thread function for keyboard input handling.
@@ -165,12 +175,10 @@ void restore_key_rate();
  *
  * @param i dummy integer parameter
  */
-void termination_handler(int);
+void termination_handler();
 
 /*!
  * \brief Print the introductive menu into the selected ncurses window.
- *
- * @param win ncurses window
  */
 void print_intro_menu(WINDOW *win);
 

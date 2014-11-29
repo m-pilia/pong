@@ -23,11 +23,14 @@
  *
  * The game main thread act as a controller, receiving data from three 
  * children threads: one for the keyboard input handling, one controlling the
- * ball position and one for the ai moves. Thread comunication is provided
+ * ball position and one for the ai moves. Another thread is used as signal
+ * listener, handling kill/int/term and terminal resize signals. Signals are 
+ * blocked during program initialization and then managed with a signal file 
+ * descriptor and a poll from the kernel. Thread comunication is provided 
  * with a pipe.
  *
- * Note that ncurses is not thread safe, so the operation on the window
- * must be in a critical zone locked with a mutex.
+ * Note that ncurses is not thread safe, so operations on the window
+ * must be inside a critical zone secured with a mutex.
  *
  * Note: the program uses a system call to change the keyboard settings for a
  * smooth playing, and previous settings are restored before game exit.
@@ -40,6 +43,7 @@
 
 #include <ncurses.h>
 #include <sys/ioctl.h>
+#include <sys/signalfd.h>
 #include <unistd.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -58,12 +62,27 @@ int main(int argc, char *argv[])
     pthread_t keyboard_handler_thread; /* thread for keyboard handling */
     pthread_t ball_handler_thread; /* thread for ball position generation */
     pthread_t ai_handler_thread; /* thread for ai position handling */
+    pthread_t signal_thread; /* thread for signal listening */
     FILE *sett[2]; /* pipes to read xorg key settings */
     game_data data; /* game data shared between threads */
+    sigset_t sigset; /* signal set */
 
     srand(getpid());
 
-    /* read typematic settings (repeat delay and rate) from xorg config
+    /* create signal set containing resize and kill/int/term signals */
+    sigemptyset(&sigset);
+    sigaddset(&sigset, SIGWINCH);
+    sigaddset(&sigset, SIGKILL);
+    sigaddset(&sigset, SIGTERM);
+    sigaddset(&sigset, SIGINT);
+
+    /* block signals */
+    sigprocmask(SIG_BLOCK, &sigset, NULL);
+
+    /* create pipe for signal handling */
+    data.signal_fd = signalfd(-1, &sigset, 0); 
+
+    /* read typematic settings (repeat delay and rate) from system 
      * and save them into global variables */
     sett[0] =  
         popen("xset q | grep 'auto repeat delay:' |"
@@ -87,18 +106,15 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    /* signal handling */
-    signal(SIGWINCH, resize_handler); /* manage terminal resize */
-    signal(SIGKILL, termination_handler); /* manage kill */
-    signal(SIGTERM, termination_handler); /* manage termination */
-    signal(SIGINT, termination_handler); /* manage interruption  */
-
     /* ncurses init */
     initscr();   /* init screen */
     noecho();    /* no keyboard echo on screen */
     curs_set(0); /* hide cursor */
     keypad(stdscr, TRUE); /* enable special keys */
     timeout(0);  /* non-blocking input */
+
+    /* get bottom row of the field */
+    data.bottom_row = getmaxy(stdscr) - 1; 
 
     /* check for color capability */
     if (has_colors() == FALSE)
@@ -120,6 +136,13 @@ int main(int argc, char *argv[])
     /* set color pair for ai */
     init_pair(AI_COLOR, COLOR_WHITE, COLOR_YELLOW);
 
+    /* create thread for signal listening */
+    pthread_create(
+            &signal_thread,
+            NULL,
+            signal_listener,
+            &data);
+
     print_intro_menu(stdscr);
 
     /* each iteration is a single game */
@@ -130,22 +153,24 @@ int main(int argc, char *argv[])
             c = getch();
             if (c == QUIT_KEY)
                 /* safe because threads have not been created yet */
-                termination_handler(0); 
+                termination_handler(); 
         } while (c != ' ');
 
         /* play status on */
         data.play_flag = 1;
+        data.termination_flag = 0; /* zero to run, non-zero to terminate */
 
         /* clear screen */
         clear();
 
         /* init player paddle */
-        data.paddle_pos = (PADDLE_TOP + PADDLE_BOT) / 2;
+        data.paddle_pos = (PADDLE_WIDTH / 2 
+                + data.bottom_row - PADDLE_WIDTH / 2) / 2;
         data.paddle_col = getmaxx(stdscr) - 1;
         draw_paddle(&data, KBD_TAG);
-        
+
         /* init ai paddle */
-        data.ai_paddle_pos = (PADDLE_TOP + PADDLE_BOT) / 2;
+        data.ai_paddle_pos = data.paddle_pos;
         data.ai_paddle_col = 1;
         draw_paddle(&data, AI_TAG);
 
@@ -157,7 +182,6 @@ int main(int argc, char *argv[])
         draw_ball(&data);
 
         /* create thread for keyboard handling */
-        data.termination_flag = 0; /* zero to run, non-zero to terminate */
         pthread_create(
                 &keyboard_handler_thread,
                 NULL,
@@ -185,17 +209,17 @@ int main(int argc, char *argv[])
 
             /* critical section */
             pthread_mutex_lock(&data.mut);
-            if (!strcmp(buf, KBD_TAG)) /* check for string equality */
+            if (!strcmp(buf, KBD_TAG)) /* data from keyboard */
             {
                 delete_paddle(&data, KBD_TAG);
                 draw_paddle(&data, KBD_TAG);
             }
-            if (!strcmp(buf, AI_TAG))
+            if (!strcmp(buf, AI_TAG)) /* data from ai */
             {
                 delete_paddle(&data, AI_TAG);
                 draw_paddle(&data, AI_TAG);
             }
-            if (!strcmp(buf, BALL_TAG))
+            if (!strcmp(buf, BALL_TAG)) /* data from ball */
             {
                 delete_ball(&data);
                 draw_ball(&data);
@@ -204,17 +228,23 @@ int main(int argc, char *argv[])
             pthread_mutex_unlock(&data.mut);
         }
 
-        /* allow key handler thread termination */
+        /* allow termination of other threads */
         data.termination_flag = 1; 
 
-        /* print instructions in superimpression (critical section) */
-        pthread_mutex_lock(&data.mut);
-        print_intra_menu(stdscr, (data.winner ? "GAME LOST" : "GAME WON"));
-        pthread_mutex_unlock(&data.mut);
+        /* print endgame message in superimpression (critical section) */
+        if (!data.exit_flag)
+        {
+            pthread_mutex_lock(&data.mut);
+            print_intra_menu(
+                    stdscr,
+                    (data.winner ? "GAME LOST" : "GAME WON"));
+            pthread_mutex_unlock(&data.mut);
+        }
 
     } while (!data.exit_flag);
 
-    /* wait for remaining children threads termination */
+    /* wait for remaining children threads termination 
+     * (ball thread terminated itself yet) */
     pthread_join(ai_handler_thread, NULL);
     pthread_join(keyboard_handler_thread, NULL);
 

@@ -8,7 +8,7 @@ Technical details
 =================
 The game main thread acts as a controller, receiving data from three 
 children threads: one for the keyboard input handling, one controlling the
-ball position and one for the ai moves. Thread comunication is provided
+ball position and one for the ai moves. Another thread is used as signal listener, handling kill/int/term and terminal resize signals. Signals are blocked during program initialization and then managed with a signal file descriptor and a poll from the kernel. Thread comunication is provided
 with a Unix pipe, while threads are provided by user-level pthread library.
 
 Note that ncurses is not thread safe, so operations on the window
@@ -23,7 +23,7 @@ requires to run into a X session.
 
 Build
 =====
-The game requires gcc with ncurses, pthread and unistd libraries. The game must run into a Xorg session.
+The game requires gcc with ncurses, pthread, unistd, ioctl and signalfd libraries, and the game must run into a Xorg session. So yes, trying to build and run this on Windows is definitely not a good idea.
 
 You can build the game launching the the following command on the project root:
 ```bash
