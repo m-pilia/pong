@@ -66,7 +66,7 @@ void *signal_listener(void *d)
         }
         
     }
-};
+}
 
 /*!
  * This procedure is an handler to manage window resize.
@@ -104,7 +104,7 @@ void resize_handler(game_data *data)
     draw_paddle(data, KBD_TAG);
     draw_ball(data);
     refresh();
-};
+}
 
 /*!
  * This procedure is a listener for keyboard input during the game.
@@ -158,7 +158,9 @@ void *keyboard_handler(void *d)
                 break;
         }
     }
-};
+    
+    return 0;
+}
 
 /*!
  * This procedure is responsible for ball movement. The ball position is 
@@ -206,7 +208,7 @@ void *ball_handler(void *d)
                 write(data->pipedes[1], QUIT_TAG, TAG_SIZE);
 
                 /* thread termination */
-                return;
+                return 0;
             }
         }
 
@@ -233,7 +235,7 @@ void *ball_handler(void *d)
                 write(data->pipedes[1], QUIT_TAG, TAG_SIZE);
 
                 /* thread termination */
-                return;
+                return 0;
             }
         }
 
@@ -241,7 +243,7 @@ void *ball_handler(void *d)
 
         usleep(TIME_GAP_BALL);
     }
-};
+}
 
 /*!
  * This procedure controls the ai pad. Movements are generated every 
@@ -267,7 +269,9 @@ void *ai_handler(void *d)
         
         usleep(TIME_GAP_AI);
     }
-};
+    
+    return 0;
+}
 
 /*!
  * This procedure cancels the pad from the previous position according
@@ -287,7 +291,7 @@ void delete_paddle(game_data *data, char *tag)
                row + i,
                type ? data->paddle_col : data->ai_paddle_col,
                ' ');
-};
+}
 
 /*!
  * This procedure draws the paddle in the current position provided by 
@@ -311,19 +315,19 @@ void draw_paddle(game_data *data, char *tag)
                 ' ');
         attroff(COLOR_PAIR(type ? PADDLE_COLOR : AI_COLOR));
     }
-};
+}
 
 void delete_ball(game_data *data)
 {
     mvaddch(data->ball_y_old, data->ball_x_old, ' ');  
-};
+}
 
 void draw_ball(game_data *data)
 {
     attron(COLOR_PAIR(BALL_COLOR));
     mvaddch(data->ball_y, data->ball_x, 'o');
     attroff(COLOR_PAIR(BALL_COLOR));
-};
+}
 
 /*!
  * This procedure restores the xorg typematic settings as they were 
@@ -334,7 +338,7 @@ void restore_key_rate()
     char command[25]; /* string to hold system commands */
     sprintf(command, "xset r rate %s %s", del, rate);
     system(command);
-};
+}
 
 /*!
  * This procedure permits to handle signals for program kill or termination,
@@ -346,7 +350,7 @@ void termination_handler()
     restore_key_rate();
     endwin();
     exit(1);
-};
+}
 
 void print_intro_menu(WINDOW *win)
 {
@@ -378,7 +382,7 @@ void print_intro_menu(WINDOW *win)
     attroff(COLOR_PAIR(TITLE_COLOR));
 
     refresh();
-};
+}
 
 void print_intra_menu(WINDOW *win, const char *msg)
 {
@@ -399,4 +403,4 @@ void print_intra_menu(WINDOW *win, const char *msg)
             x - strlen(msg2) / 2,
             msg2);
     attroff(COLOR_PAIR(TITLE_COLOR));
-};
+}

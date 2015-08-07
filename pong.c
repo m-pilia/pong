@@ -56,7 +56,7 @@
 char del[4];
 char rate[3];
 
-int main(int argc, char *argv[])
+int main(void)
 {
     char buf[TAG_SIZE + 1]; /* buffer to take tags from the pipe in*/
     pthread_t keyboard_handler_thread; /* thread for keyboard handling */
